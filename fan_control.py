@@ -17,8 +17,8 @@ class Resource:
 		if self.fanStatus == 0:
 			if self.curr_temp > self.on_temp: self.fanStatus = 1	# turn on the fan
 		elif self.curr_temp > (self.off_temp+10): self.fanStatus = 1 # increase fan speed
-			elif self.curr_temp < self.off_temp: self.fanStatus = 0		# "it's ok for me"
-				elif self.curr_temp < self.last_temp: self.fanStatus = -1	# temperature is decreasing – slow down the fan
+		elif self.curr_temp < self.off_temp: self.fanStatus = 0		# "it's ok for me"
+		elif self.curr_temp < self.last_temp: self.fanStatus = -1	# temperature is decreasing – slow down the fan
 		print(self)
 		return self.fanStatus
 
@@ -26,7 +26,7 @@ class Resource:
 		pass
 
 	def __str__(self):
-		return("fanStatus", self.fanStatus, "curr_temp: ", self.curr_temp, "last_temp: ", self.last_temp)
+		return "fanStatus: " + str(self.fanStatus) + " curr_temp: " + str(self.curr_temp) + " last_temp: " + str(self.last_temp)
 
 class Disk(Resource):
 	def __init__(self, desired_temp: int, name: str):

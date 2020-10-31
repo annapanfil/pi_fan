@@ -16,7 +16,7 @@ class Resource:
 	def ordersForFan(self) -> int:
 		if self.fanStatus == 0:
 			if self.curr_temp > self.on_temp: self.fanStatus = 1	# turn on the fan
-		elif self.curr_temp > (self.off_temp+10): self.fanStatus = 1 # increase fan speed
+		elif self.curr_temp > (self.off_temp + 10): self.fanStatus = 1 # increase fan speed
 		elif self.curr_temp < self.off_temp: self.fanStatus = 0		# "it's ok for me"
 		elif self.curr_temp < self.last_temp: self.fanStatus = -1	# temperature is decreasing – slow down the fan
 		print(self)
@@ -56,33 +56,37 @@ class Fan:
 		self.rpm = 0.0			# rotational speed of fan in rpm
 		self.pwm_pin = None
 		self.t0 = time.time()	# timing variable to determine rpm
+		self.rotations_in_5_sec = 0
 
-	def calcrpm(self, channel):
-		# interrupt function that should calculate the rpm from tacho signal, but sometimes does not work due to interrupt
-		t1 = time.time()		# get current time
-		try:
-			# self.rpm = (60 / (t1-self.t0)) # This is the normal formula to calculate rpm
-			self.rpm = (30 / (t1-self.t0)) # Since there are two flanks per rotation we need to half it
-		except ZeroDivisionError: pass
-		finally: self.t0 = t1
+	def incrementRotations(self, channel):
+		self.rotations_in_5_sec += 1
+
+	def calcrpm(self):
+		fan.rpm = 12 * fan.rotations_in_5_sec/2 # /2, because they're actually half-rotations
+		fan.rotations_in_5_sec = 0
 
 	def testFan(self, killer):
-		fan.pwm_pin.ChangeDutyCycle(100)	# set fan to fully on
+		os.system('echo \'Fan test: Starting test\' | wall -n')
+		self.pwm_pin.ChangeDutyCycle(100)	# set fan to fully on
 		time.sleep(1)						# wait for fan to stabilize
+		self.rotations_in_5_sec = 0
+		time.sleep(5)						# perform the test
+		self.calcrpm()
 		if(not self.rpm > 1000):			# check if fan is blocked -> at least that is what happened in my case
-			os.system('echo \'test: Fancontrol: Warning fan might be blocked!\' | wall')	# announce error
+			os.system('echo \'Fan test: Fancontrol: Warning fan might be blocked!\' | wall -n')
 			killer.thread_dont_terminate = False	# terminate script
 		elif(not self.rpm):							# check if fan is broken
-			os.system('echo \'test: Fancontrol: Warning fan might be broken!\' | wall')	# announce error
+			os.system('echo \'Fan test: Fancontrol: Warning fan might be broken!\' | wall -n')
 			killer.thread_dont_terminate = False	# terminate script
 		fan.pwm_pin.ChangeDutyCycle(0)				# turn fan off
+		os.system('echo \'Fan test: Test passed\' | wall -n')
 
 	def increase_rpm(self):
-		if self.desired_rpm < 30: self.desired_rpm = 30
+		if self.desired_rpm < 40: self.desired_rpm = 40
 		elif self.desired_rpm < 100: self.desired_rpm += 5
 
 	def decrease_rpm(self):
-		if self.desired_rpm > 30: self.desired_rpm -= 5
+		if self.desired_rpm > 40: self.desired_rpm -= 5
 
 class GracefulKiller:
 	# class helping with killing signals so gpio's can be cleaned up
@@ -104,8 +108,8 @@ fan = Fan()
 gpio.setmode(gpio.BCM)				 # Select pin reference
 gpio.setup(FAN_SPEED_GPIO, gpio.IN, pull_up_down = gpio.PUD_UP) # Declare fan speed pin as input and activate internal pullup resistor
 
-# Add aboth function as interrupt to tacho pin on rising edges (can also be falling does not matter)
-gpio.add_event_detect(FAN_SPEED_GPIO, gpio.RISING, callback = fan.calcrpm) # bouncetime=200 (in ms) to avoid "switch bounce"
+# Add function as interrupt to tacho pin on rising edges (can also be falling does not matter)
+gpio.add_event_detect(FAN_SPEED_GPIO, gpio.RISING, callback = fan.incrementRotations) # bouncetime=200 (in ms) to avoid "switch bounce"
 
 
 if __name__ == '__main__':
@@ -120,8 +124,9 @@ if __name__ == '__main__':
 
 	# main loop
 	while killer.thread_dont_terminate:
+		fan.calcrpm()
 		if(fan.rpm == 0 and fan.desired_rpm > 0):	# check if fan is dead
-			os.system('echo \'in main: Fancontrol: Warning fan might be broken!\' | wall')
+			os.system('echo \'Fancontrol: Warning fan might be broken!\' | wall -n')
 			killer.thread_dont_terminate = False	# stop everything
 			fan.pwm_pin.ChangeDutyCycle(0)			# turn fan off
 			break
@@ -140,8 +145,7 @@ if __name__ == '__main__':
 			fan.pwm_pin.ChangeDutyCycle(fan.desired_rpm)
 
 		# print ("CPU: %d HDD: %d Fan: %d RPM: %d" % (resources[0].curr_temp, resources[1].curr_temp, fan.desired_rpm, fan.rpm))
-		print ("CPU: %d Fan: %d RPM: %d" % (resources[0].curr_temp, fan.desired_rpm, fan.rpm))
-		fan.rpm = 0		# reset rpm
+		print ("CPU: %d Fan: %d RPM: %d\n" % (resources[0].curr_temp, fan.desired_rpm, fan.rpm))
 		time.sleep(5)
 
 	gpio.cleanup()	# cleanup gpio's
